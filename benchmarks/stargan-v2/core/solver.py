@@ -259,8 +259,17 @@ def compute_g_loss(nets, args, x_real, y_org, y_trg, z_trgs=None, x_refs=None, m
     x_rec = nets.generator(x_fake, s_org, masks=masks)
     loss_cyc = torch.mean(torch.abs(x_rec - x_real))
 
+    # style entanglement loss
+    loss_ent = 0.0
+    if args.lambda_ent is not None:
+        if z_trgs is not None:
+            s_ent = nets.mapping_network(z_trg, y_trg)
+        else:
+            s_ent = nets.style_encoder(x_ref, y_trg)
+        loss_ent = torch.mean(torch.abs(s_ent - s_trg))
+
     loss = loss_adv + args.lambda_sty * loss_sty \
-        - args.lambda_ds * loss_ds + args.lambda_cyc * loss_cyc
+        - args.lambda_ds * loss_ds + args.lambda_cyc * loss_cyc + args.lambda_ent * loss_ent
     return loss, Munch(adv=loss_adv.item(),
                        sty=loss_sty.item(),
                        ds=loss_ds.item(),

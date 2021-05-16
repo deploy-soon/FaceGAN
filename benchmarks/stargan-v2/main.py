@@ -109,6 +109,9 @@ if __name__ == '__main__':
     parser.add_argument('--w_hpf', type=float, default=1,
                         help='weight for high-pass filtering')
 
+    parser.add_argument('--lambda_ent', type=float, default=None,
+                        help='Weight for entangle style vector loss')
+
     # training arguments
     parser.add_argument('--randcrop_prob', type=float, default=0.5,
                         help='Probabilty of using random-resized cropping')
