@@ -11,6 +11,7 @@ Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
 from pathlib import Path
 from itertools import chain
 import os
+from os.path import join as pjoin
 import random
 
 from munch import Munch
@@ -76,6 +77,111 @@ class ReferenceDataset(data.Dataset):
 
     def __len__(self):
         return len(self.targets)
+
+class CelebaMultiLabelDataset(data.Dataset):
+
+    def __init__(self, root, labels, transform=None):
+        """
+        LABEL LIST
+        5_o_Clock_Shadow Arched_Eyebrows Attractive Bags_Under_Eyes
+        Bald Bangs Big_Lips Big_Nose Black_Hair Blond_Hair Blurry
+        Brown_Hair Bushy_Eyebrows Chubby Double_Chin Eyeglasses Goatee
+        Gray_Hair Heavy_Makeup High_Cheekbones Male Mouth_Slightly_Open
+        Mustache Narrow_Eyes No_Beard Oval_Face Pale_Skin Pointy_Nose
+        Receding_Hairline Rosy_Cheeks Sideburns Smiling Straight_Hair
+        Wavy_Hair Wearing_Earrings Wearing_Hat Wearing_Lipstick
+        Wearing_Necklace Wearing_Necktie Young
+        """
+        self.samples.self.targets = self._make_dataset(root)
+        self.transform = transform
+        self.labels = labels
+
+        _mapper = {}
+        with open("expr/CelebAMask-HQ-attribute-anno.txt", "r") as fin:
+            num = fin.readline()
+            headers = fin.readline().split()
+            for label in labels:
+                assert label in headers
+
+            for line in fin.readlines():
+                line = line.split()
+                file_name, labels = line[0], line[1:]
+                assert len(labels) == len(headers)
+                for header, label in zip(headers, labels):
+                    if label == '1' and header in self.labels:
+                        _mapper.setdefault(file_name, []).append(labels.index(header))
+
+        self.celeba_mapper = {}
+        with open("expr/CelebA-HQ-to-CelebA-mapping.txt", "r") as fin:
+            header = fin.readline()
+            count = 0
+            for line in fin.readlines():
+                _, _, file_name = line.split()
+                self.celeba_mapper[file_name] = _mapper[f"{count}.jpg"]
+                count += 1
+
+        self.samples, self.targets = self._make_dataset(root)
+
+    def _make_dataset(self, root):
+        #TODO: loading dataset from origin Celeba, currently from stargan parsed dataset
+        images, labels = [], []
+        for domain in ["male", "female"]:
+            for fname in os.listdir(pjoin(root, domain)):
+                if len(self.celeba_mapper[fname]) < 2:
+                    continue
+                images.append(pjoin(root, domain, fname))
+                labels.append(self.celeba_mapper[fname])
+        return images, labels
+
+    def __getitem__(self, index):
+        fname = self.samples[index]
+        labels = self.targets[index]
+        label1, label2 = random.sample(labels, 2)
+        img = Image.open(fname).convert('RGB')
+        if self.transform is not None:
+            img = self.transform(img)
+        return img, label1, label2
+
+    def __len__(self):
+        return len(self.targets)
+
+
+class CelebaMultiLabelRefDataset(CelebaMultiLabelDataset):
+
+    def __init__(self, root, labels, transform=None):
+        super(CelebaMultiLabelRefDataset, self).__init__()
+
+    def _make_dataset(self, root):
+        _images, _labels = [], []
+        for domain in ["male", "female"]:
+            for fname in os.listdir(pjoin(root, domain)):
+                if len(self.celeba_mapper[fname]) < 2:
+                    continue
+                _images.append(pjoin(root, domain, fname))
+                _labels.append(self.celeba_mapper[fname])
+        fnames1, fnames2, labels = [], [], []
+        for label1 in range(len(self.labels)):
+            for label2 in range(label1 + 1, len(self.labels)):
+
+                _fnames = []
+                for image, label in zip(_images, _labels):
+                    if label1 in label and label2 in lable:
+                        _fnames.append(image)
+                fnames1 += len(_fnames)
+                fnames2 += random.sample(_fnames, len(_fnames))
+                labels += [(label1, label2)] * len(_fnames)
+
+        return list(zip(fnames, fnames2)), labels
+
+    def __getitem__(self, index):
+        fname, fname2 = self.samples[index]
+        label1, label2 = self.targets[index]
+        img = Image.open(fname).convert('RGB')
+        img2 = Image.open(fname2).convert('RGB')
+        if self.transform is not None:
+            img = self.transform(img)
+            img2 = self.transform(img2)
+        return img, img2, label1, label2
 
 
 def _make_balanced_sampler(labels):
