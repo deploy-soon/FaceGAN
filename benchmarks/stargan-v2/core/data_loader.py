@@ -190,8 +190,15 @@ def _make_balanced_sampler(labels):
     weights = class_weights[labels]
     return WeightedRandomSampler(weights, len(weights))
 
+def _make_balanced_tuple_sampler(labels):
+    counter = {}
+    for label in labels:
+        counter.setdefault(label, 0)
+        counter[label] += 1
+    weights = [1. / counter[label] for label in labels]
+    return WeightedRandomSampler(weights, len(weights))
 
-def get_train_loader(root, which='source', img_size=256,
+def get_train_loader(root, labels=["Male", "Smiling"], which='source', img_size=256,
                      batch_size=8, prob=0.5, num_workers=4):
     print('Preparing DataLoader to fetch %s images '
           'during the training phase...' % which)
@@ -209,15 +216,15 @@ def get_train_loader(root, which='source', img_size=256,
         transforms.Normalize(mean=[0.5, 0.5, 0.5],
                              std=[0.5, 0.5, 0.5]),
     ])
-
+    sampler = None
     if which == 'source':
-        dataset = ImageFolder(root, transform)
+        dataset = CelebaMultiLabelDataset(root, labels, transform)
     elif which == 'reference':
-        dataset = ReferenceDataset(root, transform)
+        dataset = CelebaMultiLabelRefDataset(root, labels, transform)
+        sampler = _make_balanced_tuple_sampler(dataset.targets):
     else:
         raise NotImplementedError
 
-    sampler = _make_balanced_sampler(dataset.targets)
     return data.DataLoader(dataset=dataset,
                            batch_size=batch_size,
                            sampler=sampler,
@@ -255,7 +262,7 @@ def get_eval_loader(root, img_size=256, batch_size=32,
                            drop_last=drop_last)
 
 
-def get_test_loader(root, img_size=256, batch_size=32,
+def get_test_loader(root, labels=["Male", "Smiling"], img_size=256, batch_size=32,
                     shuffle=True, num_workers=4):
     print('Preparing DataLoader for the generation phase...')
     transform = transforms.Compose([
@@ -265,7 +272,8 @@ def get_test_loader(root, img_size=256, batch_size=32,
                              std=[0.5, 0.5, 0.5]),
     ])
 
-    dataset = ImageFolder(root, transform)
+    #dataset = ImageFolder(root, transform)
+    dataset = CelebaMultiLabelDataset(root, labels, transform)
     return data.DataLoader(dataset=dataset,
                            batch_size=batch_size,
                            shuffle=shuffle,
