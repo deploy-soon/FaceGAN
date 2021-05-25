@@ -210,41 +210,17 @@ class MappingNetwork(nn.Module):
                                             nn.ReLU(),
                                             nn.Linear(512, style_dim))]
 
-        self.styler = nn.ModuleList()
-        for _ in range(num_domains):
-            self.styler += [nn.Linear(num_domains - 1)]
-
-    def entangle(self, x, y):
-        h = self.shared(x)
-        h = h.view(h.size(0), -1)
-        out = []
-        for layer in self.unshared:
-            out += [layer(h)]
-        out = torch.stack(out, dim=1)  # (batch, num_domains, style_dim)
-        out = out.transpose(0, 2, 1) # (batch, style_dim, num_domains)
-
-        style_vectors = []
-        for i, styler in enumerate(self.styler):
-            idx = [True] * self.num_domains
-            ids[i] = False
-            style_vectors += [styler(out[:,:,idx]).squeeze().unsqueeze(1)]
-        style_vectors = torch.stack(style_vectors, dim=1) # (batch, style_dim, num_domains)
-        idx = torch.LongTensor(range(y.size(0))).to(y.device)
-        s = style_vectors[idx, y]  # (batch, style_dim)
-        return style_vectors
-
     def forward(self, z, y):
         h = self.shared(z)
         out = []
         for layer in self.unshared:
             out += [layer(h)]
         out = torch.stack(out, dim=1)  # (batch, num_domains, style_dim)
-        if self.use_styler:
-            s = self.entangle(out)
-        else:
-            idx = torch.LongTensor(range(y.size(0))).to(y.device)
-            s = out[idx, y]  # (batch, style_dim)
+
+        idx = torch.LongTensor(range(y.size(0))).to(y.device)
+        s = out[idx, y]  # (batch, style_dim)
         return s
+
 
 class StyleEncoder(nn.Module):
     def __init__(self, img_size=256, style_dim=64, num_domains=2, max_conv_dim=512):
@@ -269,29 +245,6 @@ class StyleEncoder(nn.Module):
         self.unshared = nn.ModuleList()
         for _ in range(num_domains):
             self.unshared += [nn.Linear(dim_out, style_dim)]
-
-        self.styler = nn.ModuleList()
-        for _ in range(num_domains):
-            self.styler += [nn.Linear(num_domains - 1)]
-
-    def entangle(self, x, y):
-        h = self.shared(x)
-        h = h.view(h.size(0), -1)
-        out = []
-        for layer in self.unshared:
-            out += [layer(h)]
-        out = torch.stack(out, dim=1)  # (batch, num_domains, style_dim)
-        out = out.transpose(0, 2, 1) # (batch, style_dim, num_domains)
-
-        style_vectors = []
-        for i, styler in enumerate(self.styler):
-            idx = [True] * self.num_domains
-            ids[i] = False
-            style_vectors += [styler(out[:,:,idx]).squeeze().unsqueeze(1)]
-        style_vectors = torch.stack(style_vectors, dim=1) # (batch, style_dim, num_domains)
-        idx = torch.LongTensor(range(y.size(0))).to(y.device)
-        s = style_vectors[idx, y]  # (batch, style_dim)
-        return style_vectors
 
     def forward(self, x, y):
         h = self.shared(x)

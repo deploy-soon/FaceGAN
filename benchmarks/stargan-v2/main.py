@@ -40,18 +40,21 @@ def main(args):
         assert len(subdirs(args.train_img_dir)) == args.num_domains
         assert len(subdirs(args.val_img_dir)) == args.num_domains
         loaders = Munch(src=get_train_loader(root=args.train_img_dir,
+                                             labels=args.domains,
                                              which='source',
                                              img_size=args.img_size,
                                              batch_size=args.batch_size,
                                              prob=args.randcrop_prob,
                                              num_workers=args.num_workers),
                         ref=get_train_loader(root=args.train_img_dir,
+                                             labels=args.domains,
                                              which='reference',
                                              img_size=args.img_size,
                                              batch_size=args.batch_size,
                                              prob=args.randcrop_prob,
                                              num_workers=args.num_workers),
                         val=get_test_loader(root=args.val_img_dir,
+                                            labels=args.domains,
                                             img_size=args.img_size,
                                             batch_size=args.val_batch_size,
                                             shuffle=True,
@@ -86,8 +89,9 @@ if __name__ == '__main__':
     # model arguments
     parser.add_argument('--img_size', type=int, default=256,
                         help='Image resolution')
-    parser.add_argument('--num_domains', type=int, default=2,
-                        help='Number of domains')
+    #parser.add_argument('--num_domains', type=int, default=2,
+    #                    help='Number of domains')
+    parser.add_argument('--domains', nargs='+', default="Smiling Male")
     parser.add_argument('--latent_dim', type=int, default=16,
                         help='Latent vector dimension')
     parser.add_argument('--hidden_dim', type=int, default=512,
@@ -182,4 +186,5 @@ if __name__ == '__main__':
     parser.add_argument('--eval_every', type=int, default=50000)
 
     args = parser.parse_args()
+    args.num_domains = len(args.domains)
     main(args)
