@@ -11,6 +11,7 @@ Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
 from pathlib import Path
 from itertools import chain
 import os
+from os.path import join as pjoin
 import random
 
 from munch import Munch
@@ -77,6 +78,119 @@ class ReferenceDataset(data.Dataset):
     def __len__(self):
         return len(self.targets)
 
+class CelebaMultiLabelDataset(data.Dataset):
+
+    def __init__(self, root, labels, transform=None):
+        """
+        LABEL LIST
+        5_o_Clock_Shadow Arched_Eyebrows Attractive Bags_Under_Eyes
+        Bald Bangs Big_Lips Big_Nose Black_Hair Blond_Hair Blurry
+        Brown_Hair Bushy_Eyebrows Chubby Double_Chin Eyeglasses Goatee
+        Gray_Hair Heavy_Makeup High_Cheekbones Male Mouth_Slightly_Open
+        Mustache Narrow_Eyes No_Beard Oval_Face Pale_Skin Pointy_Nose
+        Receding_Hairline Rosy_Cheeks Sideburns Smiling Straight_Hair
+        Wavy_Hair Wearing_Earrings Wearing_Hat Wearing_Lipstick
+        Wearing_Necklace Wearing_Necktie Young
+
+        EXAMPLE
+        labels: ["Male", "Smiling", "Blurry"]
+        -> 0: "Male", 1: "Not_Male", 2: "Smiling", ..., 5: "Not_Blurry"
+        """
+        self.transform = transform
+        self.labels = []
+        for label in labels:
+            self.labels.append(label)
+            self.labels.append("Not_" + label)
+
+        _mapper = {}
+        with open("expr/CelebAMask-HQ-attribute-anno.txt", "r") as fin:
+            num = fin.readline()
+            headers = fin.readline().split()
+            for label in labels:
+                assert label in headers
+            labels_idx = [headers.index(label) for label in labels]
+
+            for line in fin.readlines():
+                line = line.split()
+                file_name, labels = line[0], line[1:]
+                assert len(labels) == len(headers)
+                _mapper[file_name] = [2 * num if labels[label_idx] == '1' else 2 * num + 1 for num, label_idx in enumerate(labels_idx)]
+
+        self.celeba_mapper = {}
+        with open("expr/CelebA-HQ-to-CelebA-mapping.txt", "r") as fin:
+            header = fin.readline()
+            count = 0
+            for line in fin.readlines():
+                _, _, file_name = line.split()
+                org_name = f"{count}.jpg"
+                if org_name in _mapper:
+                    self.celeba_mapper[file_name] = _mapper[f"{count}.jpg"]
+                count += 1
+
+        self.samples, self.targets = self._make_dataset(root)
+        print("len dataset", len(self.targets))
+
+    def _make_dataset(self, root):
+        #TODO: loading dataset from origin Celeba, currently from stargan parsed dataset
+        images, labels = [], []
+        for domain in ["male", "female"]:
+            for fname in os.listdir(pjoin(root, domain)):
+                if len(self.celeba_mapper.get(fname, [])) < 2:
+                    continue
+                images.append(pjoin(root, domain, fname))
+                labels.append(self.celeba_mapper[fname])
+        return images, labels
+
+    def __getitem__(self, index):
+        fname = self.samples[index]
+        labels = self.targets[index]
+        label1, label2 = random.sample(labels, 2)
+        img = Image.open(fname).convert('RGB')
+        if self.transform is not None:
+            img = self.transform(img)
+        return img, label1, label2
+
+    def __len__(self):
+        return len(self.targets)
+
+
+class CelebaMultiLabelRefDataset(CelebaMultiLabelDataset):
+
+    def __init__(self, root, labels, transform=None):
+        super(CelebaMultiLabelRefDataset, self).__init__(root, labels, transform)
+
+    def _make_dataset(self, root):
+        _images, _labels = [], []
+        for domain in ["male", "female"]:
+            for fname in os.listdir(pjoin(root, domain)):
+                if len(self.celeba_mapper.get(fname, [])) < 2:
+                    continue
+                _images.append(pjoin(root, domain, fname))
+                _labels.append(self.celeba_mapper[fname])
+        fnames1, fnames2, labels = [], [], []
+        for label1 in range(len(self.labels)):
+            for label2 in range(label1 + 1, len(self.labels)):
+
+                _fnames = []
+                for image, label in zip(_images, _labels):
+                    if label1 in label and label2 in label:
+                        _fnames.append(image)
+                fnames1 += _fnames
+                fnames2 += random.sample(_fnames, len(_fnames))
+                labels += [(label1, label2)] * len(_fnames)
+
+        return list(zip(fnames1, fnames2)), labels
+
+    def __getitem__(self, index):
+        fname, fname2 = self.samples[index]
+        label1, label2 = self.targets[index]
+        img = Image.open(fname).convert('RGB')
+        img2 = Image.open(fname2).convert('RGB')
+        if self.transform is not None:
+            img = self.transform(img)
+            img2 = self.transform(img2)
+        return img, img2, label1, label2
+
 
 def _make_balanced_sampler(labels):
     class_counts = np.bincount(labels)
@@ -84,8 +198,15 @@ def _make_balanced_sampler(labels):
     weights = class_weights[labels]
     return WeightedRandomSampler(weights, len(weights))
 
+def _make_balanced_tuple_sampler(labels):
+    counter = {}
+    for label in labels:
+        counter.setdefault(label, 0)
+        counter[label] += 1
+    weights = [1. / counter[label] for label in labels]
+    return WeightedRandomSampler(weights, len(weights))
 
-def get_train_loader(root, which='source', img_size=256,
+def get_train_loader(root, labels=["Male", "Smiling"], which='source', img_size=256,
                      batch_size=8, prob=0.5, num_workers=4):
     print('Preparing DataLoader to fetch %s images '
           'during the training phase...' % which)
@@ -103,15 +224,15 @@ def get_train_loader(root, which='source', img_size=256,
         transforms.Normalize(mean=[0.5, 0.5, 0.5],
                              std=[0.5, 0.5, 0.5]),
     ])
-
+    sampler = None
     if which == 'source':
-        dataset = ImageFolder(root, transform)
+        dataset = CelebaMultiLabelDataset(root, labels, transform)
     elif which == 'reference':
-        dataset = ReferenceDataset(root, transform)
+        dataset = CelebaMultiLabelRefDataset(root, labels, transform)
+        sampler = _make_balanced_tuple_sampler(dataset.targets)
     else:
         raise NotImplementedError
 
-    sampler = _make_balanced_sampler(dataset.targets)
     return data.DataLoader(dataset=dataset,
                            batch_size=batch_size,
                            sampler=sampler,
@@ -149,7 +270,7 @@ def get_eval_loader(root, img_size=256, batch_size=32,
                            drop_last=drop_last)
 
 
-def get_test_loader(root, img_size=256, batch_size=32,
+def get_test_loader(root, labels=["Male", "Smiling"], img_size=256, batch_size=32,
                     shuffle=True, num_workers=4):
     print('Preparing DataLoader for the generation phase...')
     transform = transforms.Compose([
@@ -159,7 +280,8 @@ def get_test_loader(root, img_size=256, batch_size=32,
                              std=[0.5, 0.5, 0.5]),
     ])
 
-    dataset = ImageFolder(root, transform)
+    #dataset = ImageFolder(root, transform)
+    dataset = CelebaMultiLabelDataset(root, labels, transform)
     return data.DataLoader(dataset=dataset,
                            batch_size=batch_size,
                            shuffle=shuffle,
@@ -206,6 +328,53 @@ class InputFetcher:
                            x_ref=x_ref, y_ref=y_ref)
         elif self.mode == 'test':
             inputs = Munch(x=x, y=y)
+        else:
+            raise NotImplementedError
+
+        return Munch({k: v.to(self.device)
+                      for k, v in inputs.items()})
+
+
+class MultiInputFetcher:
+
+    def __init__(self, loader, loader_ref=None, latent_dim=16, mode=''):
+        self.loader = loader
+        self.loader_ref = loader_ref
+        self.latent_dim = latent_dim
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.mode = mode
+
+    def _fetch_inputs(self):
+        try:
+            x, y1, y2 = next(self.iter)
+        except (AttributeError, StopIteration):
+            self.iter = iter(self.loader)
+            x, y1, y2 = next(self.iter)
+        return x, y1, y2
+
+    def _fetch_refs(self):
+        try:
+            x, x2, y1, y2 = next(self.iter_ref)
+        except (AttributeError, StopIteration):
+            self.iter_ref = iter(self.loader_ref)
+            x, x2, y1, y2 = next(self.iter_ref)
+        return x, x2, y1, y2
+
+    def __next__(self):
+        x, y1, y2 = self._fetch_inputs()
+        if self.mode == 'train':
+            x_ref, x_ref2, y1_ref, y2_ref = self._fetch_refs()
+            z_trg = torch.randn(x.size(0), self.latent_dim)
+            z_trg2 = torch.randn(x.size(0), self.latent_dim)
+            inputs = Munch(x_src=x, y1_src=y1, y2_src=y2, y1_ref=y1_ref, y2_ref=y2_ref,
+                           x_ref=x_ref, x_ref2=x_ref2,
+                           z_trg=z_trg, z_trg2=z_trg2)
+        elif self.mode == 'val':
+            x_ref, y1_ref, y2_ref = self._fetch_inputs()
+            inputs = Munch(x_src=x, y1_src=y1, y2_src=y2,
+                           x_ref=x_ref, y1_ref=y1_ref, y2_ref=y2_ref)
+        elif self.mode == 'test':
+            inputs = Munch(x=x, y=y1)
         else:
             raise NotImplementedError
 

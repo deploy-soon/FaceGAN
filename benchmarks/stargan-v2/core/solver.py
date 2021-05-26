@@ -11,6 +11,7 @@ Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
 import os
 from os.path import join as ospj
 import time
+import random
 import datetime
 from munch import Munch
 
@@ -20,7 +21,7 @@ import torch.nn.functional as F
 
 from core.model import build_model
 from core.checkpoint import CheckpointIO
-from core.data_loader import InputFetcher
+from core.data_loader import MultiInputFetcher as InputFetcher
 import core.utils as utils
 from metrics.eval import calculate_metrics
 
@@ -99,28 +100,29 @@ class Solver(nn.Module):
         for i in range(args.resume_iter, args.total_iters):
             # fetch images and labels
             inputs = next(fetcher)
-            x_real, y_org = inputs.x_src, inputs.y_src
-            x_ref, x_ref2, y_trg = inputs.x_ref, inputs.x_ref2, inputs.y_ref
+            x_real, y1_org, y2_org = inputs.x_src, inputs.y1_src, inputs.y2_src
+            x_ref, x_ref2, y1_trg, y2_trg = inputs.x_ref, inputs.x_ref2, inputs.y1_ref, inputs.y2_ref
             z_trg, z_trg2 = inputs.z_trg, inputs.z_trg2
 
-            masks = nets.fan.get_heatmap(x_real) if args.w_hpf > 0 else None
+            #masks = nets.fan.get_heatmap(x_real) if args.w_hpf > 0 else None
+            masks = nets.fan(x_real) if args.w_hpf > 0 else None
 
             # train the discriminator
             d_loss, d_losses_latent = compute_d_loss(
-                nets, args, x_real, y_org, y_trg, z_trg=z_trg, masks=masks)
+                nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg, z_trg=z_trg, masks=masks)
             self._reset_grad()
             d_loss.backward()
             optims.discriminator.step()
 
             d_loss, d_losses_ref = compute_d_loss(
-                nets, args, x_real, y_org, y_trg, x_ref=x_ref, masks=masks)
+                nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg, x_ref=x_ref, masks=masks)
             self._reset_grad()
             d_loss.backward()
             optims.discriminator.step()
 
             # train the generator
             g_loss, g_losses_latent = compute_g_loss(
-                nets, args, x_real, y_org, y_trg, z_trgs=[z_trg, z_trg2], masks=masks)
+                nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg, z_trgs=[z_trg, z_trg2], masks=masks)
             self._reset_grad()
             g_loss.backward()
             optims.generator.step()
@@ -128,7 +130,7 @@ class Solver(nn.Module):
             optims.style_encoder.step()
 
             g_loss, g_losses_ref = compute_g_loss(
-                nets, args, x_real, y_org, y_trg, x_refs=[x_ref, x_ref2], masks=masks)
+                nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg, x_refs=[x_ref, x_ref2], masks=masks)
             self._reset_grad()
             g_loss.backward()
             optims.generator.step()
@@ -182,11 +184,11 @@ class Solver(nn.Module):
 
         fname = ospj(args.result_dir, 'reference.jpg')
         print('Working on {}...'.format(fname))
-        utils.translate_using_reference(nets_ema, args, src.x, ref.x, ref.y, fname)
+        utils.translate_using_reference(nets_ema, args, src.x, ref.x, ref.y1, fname)
 
-        fname = ospj(args.result_dir, 'video_ref.mp4')
-        print('Working on {}...'.format(fname))
-        utils.video_ref(nets_ema, args, src.x, ref.x, ref.y, fname)
+        #fname = ospj(args.result_dir, 'video_ref.mp4')
+        #print('Working on {}...'.format(fname))
+        #utils.video_ref(nets_ema, args, src.x, ref.x, ref.y, fname)
 
     @torch.no_grad()
     def evaluate(self):
@@ -197,25 +199,43 @@ class Solver(nn.Module):
         calculate_metrics(nets_ema, args, step=resume_iter, mode='latent')
         calculate_metrics(nets_ema, args, step=resume_iter, mode='reference')
 
+def _random():
+    return random.randint(0, 1) == 0
 
-def compute_d_loss(nets, args, x_real, y_org, y_trg, z_trg=None, x_ref=None, masks=None):
+def compute_d_loss(nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg,
+                   z_trg=None, x_ref=None, masks=None):
+
     assert (z_trg is None) != (x_ref is None)
     # with real images
     x_real.requires_grad_()
-    out = nets.discriminator(x_real, y_org)
-    loss_real = adv_loss(out, 1)
-    loss_reg = r1_reg(out, x_real)
+    out1 = nets.discriminator(x_real, y1_org)
+    out2 = nets.discriminator(x_real, y2_org)
+    loss_real = 0.5 * (adv_loss(out1, 1) + adv_loss(out2, 1))
+    loss_reg = 0.5 * (r1_reg(out1, x_real) + r1_reg(out2, x_real))
 
     # with fake images
     with torch.no_grad():
         if z_trg is not None:
-            s_trg = nets.mapping_network(z_trg, y_trg)
+            s1_trg = nets.mapping_network(z_trg, y1_trg)
+            s2_trg = nets.mapping_network(z_trg, y2_trg)
         else:  # x_ref is not None
-            s_trg = nets.style_encoder(x_ref, y_trg)
+            s1_trg = nets.style_encoder(x_ref, y1_trg)
+            s2_trg = nets.style_encoder(x_ref, y2_trg)
 
-        x_fake = nets.generator(x_real, s_trg, masks=masks)
-    out = nets.discriminator(x_fake, y_trg)
-    loss_fake = adv_loss(out, 0)
+        if _random():
+            x_fake = nets.generator(x_real, s1_trg, masks)
+            #masks1 = nets.fan.get_heatmap(x_fake) if args.w_hpf > 0 else None
+            masks1 = nets.fan(x_fake) if args.w_hpf > 0 else None
+            x_fake = nets.generator(x_fake, s2_trg, masks1)
+        else:
+            x_fake = nets.generator(x_real, s2_trg, masks)
+            #masks2 = nets.fan.get_heatmap(x_fake) if args.w_hpf > 0 else None
+            masks2 = nets.fan(x_fake) if args.w_hpf > 0 else None
+            x_fake = nets.generator(x_fake, s1_trg, masks2)
+
+    out1 = nets.discriminator(x_fake, y1_trg)
+    out2 = nets.discriminator(x_fake, y2_trg)
+    loss_fake = 0.5 * (adv_loss(out1, 0) + adv_loss(out2, 0))
 
     loss = loss_real + loss_fake + args.lambda_reg * loss_reg
     return loss, Munch(real=loss_real.item(),
@@ -223,7 +243,9 @@ def compute_d_loss(nets, args, x_real, y_org, y_trg, z_trg=None, x_ref=None, mas
                        reg=loss_reg.item())
 
 
-def compute_g_loss(nets, args, x_real, y_org, y_trg, z_trgs=None, x_refs=None, masks=None):
+def compute_g_loss(nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg,
+                   z_trgs=None, x_refs=None, masks=None):
+
     assert (z_trgs is None) != (x_refs is None)
     if z_trgs is not None:
         z_trg, z_trg2 = z_trgs
@@ -232,48 +254,76 @@ def compute_g_loss(nets, args, x_real, y_org, y_trg, z_trgs=None, x_refs=None, m
 
     # adversarial loss
     if z_trgs is not None:
-        s_trg = nets.mapping_network(z_trg, y_trg)
+        s1_trg = nets.mapping_network(z_trg, y1_trg)
+        s2_trg = nets.mapping_network(z_trg, y2_trg)
     else:
-        s_trg = nets.style_encoder(x_ref, y_trg)
+        s1_trg = nets.style_encoder(x_ref, y1_trg)
+        s2_trg = nets.style_encoder(x_ref, y2_trg)
 
-    x_fake = nets.generator(x_real, s_trg, masks=masks)
-    out = nets.discriminator(x_fake, y_trg)
-    loss_adv = adv_loss(out, 1)
+    x_fake1 = nets.generator(x_real, s1_trg, masks)
+    #masks1 = nets.fan.get_heatmap(x_fake1) if args.w_hpf > 0 else None
+    masks1 = nets.fan(x_fake1) if args.w_hpf > 0 else None
+    x_fake12 = nets.generator(x_fake1, s2_trg, masks1)
+
+    x_fake2 = nets.generator(x_real, s2_trg, masks)
+    #masks2 = nets.fan.get_heatmap(x_fake2) if args.w_hpf > 0 else None
+    masks2 = nets.fan(x_fake2) if args.w_hpf > 0 else None
+    x_fake21 = nets.generator(x_fake2, s1_trg, masks2)
+
+    x_fake = x_fake12 if _random() else x_fake21
+
+    out1 = nets.discriminator(x_fake, y1_trg)
+    out2 = nets.discriminator(x_fake, y2_trg)
+    loss_adv = 0.5 * (adv_loss(out1, 1) + adv_loss(out2, 1))
 
     # style reconstruction loss
-    s_pred = nets.style_encoder(x_fake, y_trg)
-    loss_sty = torch.mean(torch.abs(s_pred - s_trg))
+    s1_pred = nets.style_encoder(x_fake, y1_trg)
+    s2_pred = nets.style_encoder(x_fake, y2_trg)
+    loss_sty = 0.5 * torch.mean(torch.abs(s1_pred - s1_trg) + torch.abs(s2_pred - s2_trg))
+
+    # independent domain loss
+    #x_rec1 = nets.generator(x_fake, s1_trg, masks=masks)
+    #x_rec2 = nets.generator(x_fake, s2_trg, masks=masks)
+    s1_pred = nets.style_encoder(x_fake1, y1_trg)
+    s12_pred = nets.style_encoder(x_fake12, y1_trg)
+    s2_pred = nets.style_encoder(x_fake2, y2_trg)
+    s21_pred = nets.style_encoder(x_fake21, y2_trg)
+    loss_ind = 0.5 * torch.mean(torch.abs(s1_pred - s12_pred) + torch.abs(s2_pred - s21_pred))
 
     # diversity sensitive loss
     if z_trgs is not None:
-        s_trg2 = nets.mapping_network(z_trg2, y_trg)
+        s1_trg2 = nets.mapping_network(z_trg2, y1_trg)
+        s2_trg2 = nets.mapping_network(z_trg2, y2_trg)
     else:
-        s_trg2 = nets.style_encoder(x_ref2, y_trg)
-    x_fake2 = nets.generator(x_real, s_trg2, masks=masks)
-    x_fake2 = x_fake2.detach()
-    loss_ds = torch.mean(torch.abs(x_fake - x_fake2))
+        s1_trg2 = nets.style_encoder(x_ref2, y1_trg)
+        s2_trg2 = nets.style_encoder(x_ref2, y2_trg)
+
+    x_fake1_2 = nets.generator(x_real, s1_trg2, masks=masks)
+    x_fake1_2 = x_fake1_2.detach()
+    x_fake2_2 = nets.generator(x_real, s2_trg2, masks=masks)
+    x_fake2_2 = x_fake2_2.detach()
+
+    loss_ds = 0.5 * torch.mean(torch.abs(x_fake1 - x_fake1_2) + torch.abs(x_fake2 - x_fake2_2))
 
     # cycle-consistency loss
-    masks = nets.fan.get_heatmap(x_fake) if args.w_hpf > 0 else None
-    s_org = nets.style_encoder(x_real, y_org)
-    x_rec = nets.generator(x_fake, s_org, masks=masks)
-    loss_cyc = torch.mean(torch.abs(x_rec - x_real))
+    #masks = nets.fan.get_heatmap(x_fake1) if args.w_hpf > 0 else None
+    masks = nets.fan(x_fake1) if args.w_hpf > 0 else None
+    s1_org = nets.style_encoder(x_real, y1_org)
+    x_rec1 = nets.generator(x_fake1, s1_org, masks=masks)
 
-    # style entanglement loss
-    loss_ent = 0.0
-    if args.lambda_ent is not None:
-        if z_trgs is not None:
-            s_ent = nets.mapping_network(z_trg, y_trg)
-        else:
-            s_ent = nets.style_encoder(x_ref, y_trg)
-        loss_ent = torch.mean(torch.abs(s_ent - s_trg))
+    masks = nets.fan(x_fake2) if args.w_hpf > 0 else None
+    s2_org = nets.style_encoder(x_real, y2_org)
+    x_rec2 = nets.generator(x_fake2, s2_org, masks=masks)
+
+    loss_cyc = 0.5 * torch.mean(torch.abs(x_rec1 - x_real) + torch.abs(x_rec2 - x_real))
 
     loss = loss_adv + args.lambda_sty * loss_sty \
-        - args.lambda_ds * loss_ds + args.lambda_cyc * loss_cyc + args.lambda_ent * loss_ent
+        - args.lambda_ds * loss_ds + args.lambda_cyc * loss_cyc + args.lambda_ind * loss_ind
     return loss, Munch(adv=loss_adv.item(),
                        sty=loss_sty.item(),
                        ds=loss_ds.item(),
-                       cyc=loss_cyc.item())
+                       cyc=loss_cyc.item(),
+                       ind=loss_ind.item())
 
 
 def moving_average(model, model_test, beta=0.999):

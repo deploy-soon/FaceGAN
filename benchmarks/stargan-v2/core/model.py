@@ -120,7 +120,7 @@ class AdainResBlk(nn.Module):
         return out
 
 
-class HighPass(nn.Module):
+class _HighPass(nn.Module):
     def __init__(self, w_hpf, device):
         super(HighPass, self).__init__()
         self.filter = torch.tensor([[-1, -1, -1],
@@ -131,6 +131,18 @@ class HighPass(nn.Module):
         filter = self.filter.unsqueeze(0).unsqueeze(1).repeat(x.size(1), 1, 1, 1)
         return F.conv2d(x, filter, padding=1, groups=x.size(1))
 
+class HighPass(nn.Module):
+    def __init__(self, w_hpf, device):
+        super(HighPass, self).__init__()
+        self.w_hpf = w_hpf
+
+    def forward(self, x):
+        filter = torch.tensor([[-1, -1, -1],
+                               [-1, 8., -1],
+                               [-1, -1, -1]]).to(x.device) / self.w_hpf
+
+        filter = filter.unsqueeze(0).unsqueeze(1).repeat(x.size(1), 1, 1, 1)
+        return F.conv2d(x, filter, padding=1, groups=x.size(1))
 
 class Generator(nn.Module):
     def __init__(self, img_size=256, style_dim=64, max_conv_dim=512, w_hpf=1):
@@ -210,41 +222,17 @@ class MappingNetwork(nn.Module):
                                             nn.ReLU(),
                                             nn.Linear(512, style_dim))]
 
-        self.styler = nn.ModuleList()
-        for _ in range(num_domains):
-            self.styler += [nn.Linear(num_domains - 1)]
-
-    def entangle(self, x, y):
-        h = self.shared(x)
-        h = h.view(h.size(0), -1)
-        out = []
-        for layer in self.unshared:
-            out += [layer(h)]
-        out = torch.stack(out, dim=1)  # (batch, num_domains, style_dim)
-        out = out.transpose(0, 2, 1) # (batch, style_dim, num_domains)
-
-        style_vectors = []
-        for i, styler in enumerate(self.styler):
-            idx = [True] * self.num_domains
-            ids[i] = False
-            style_vectors += [styler(out[:,:,idx]).squeeze().unsqueeze(1)]
-        style_vectors = torch.stack(style_vectors, dim=1) # (batch, style_dim, num_domains)
-        idx = torch.LongTensor(range(y.size(0))).to(y.device)
-        s = style_vectors[idx, y]  # (batch, style_dim)
-        return style_vectors
-
     def forward(self, z, y):
         h = self.shared(z)
         out = []
         for layer in self.unshared:
             out += [layer(h)]
         out = torch.stack(out, dim=1)  # (batch, num_domains, style_dim)
-        if self.use_styler:
-            s = self.entangle(out)
-        else:
-            idx = torch.LongTensor(range(y.size(0))).to(y.device)
-            s = out[idx, y]  # (batch, style_dim)
+
+        idx = torch.LongTensor(range(y.size(0))).to(y.device)
+        s = out[idx, y]  # (batch, style_dim)
         return s
+
 
 class StyleEncoder(nn.Module):
     def __init__(self, img_size=256, style_dim=64, num_domains=2, max_conv_dim=512):
@@ -269,29 +257,6 @@ class StyleEncoder(nn.Module):
         self.unshared = nn.ModuleList()
         for _ in range(num_domains):
             self.unshared += [nn.Linear(dim_out, style_dim)]
-
-        self.styler = nn.ModuleList()
-        for _ in range(num_domains):
-            self.styler += [nn.Linear(num_domains - 1)]
-
-    def entangle(self, x, y):
-        h = self.shared(x)
-        h = h.view(h.size(0), -1)
-        out = []
-        for layer in self.unshared:
-            out += [layer(h)]
-        out = torch.stack(out, dim=1)  # (batch, num_domains, style_dim)
-        out = out.transpose(0, 2, 1) # (batch, style_dim, num_domains)
-
-        style_vectors = []
-        for i, styler in enumerate(self.styler):
-            idx = [True] * self.num_domains
-            ids[i] = False
-            style_vectors += [styler(out[:,:,idx]).squeeze().unsqueeze(1)]
-        style_vectors = torch.stack(style_vectors, dim=1) # (batch, style_dim, num_domains)
-        idx = torch.LongTensor(range(y.size(0))).to(y.device)
-        s = style_vectors[idx, y]  # (batch, style_dim)
-        return style_vectors
 
     def forward(self, x, y):
         h = self.shared(x)
@@ -341,6 +306,16 @@ def build_model(args):
     mapping_network_ema = copy.deepcopy(mapping_network)
     style_encoder_ema = copy.deepcopy(style_encoder)
 
+    if args.multi_gpus and torch.cuda.device_count() > 1:
+        print("Hello", torch.cuda.device_count(), "gpus~~")
+        generator = nn.DataParallel(generator)
+        mapping_network = nn.DataParallel(mapping_network)
+        style_encoder = nn.DataParallel(style_encoder)
+        discriminator = nn.DataParallel(discriminator)
+        generator_ema = nn.DataParallel(generator_ema)
+        mapping_network_ema = nn.DataParallel(mapping_network_ema)
+        style_encoder_ema = nn.DataParallel(style_encoder_ema)
+
     nets = Munch(generator=generator,
                  mapping_network=mapping_network,
                  style_encoder=style_encoder,
@@ -351,6 +326,8 @@ def build_model(args):
 
     if args.w_hpf > 0:
         fan = FAN(fname_pretrained=args.wing_path).eval()
+        if args.multi_gpus and torch.cuda.device_count() > 1:
+            fan = nn.DataParallel(fan)
         nets.fan = fan
         nets_ema.fan = fan
 
