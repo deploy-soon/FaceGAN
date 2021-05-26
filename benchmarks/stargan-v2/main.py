@@ -37,8 +37,6 @@ def main(args):
     solver = Solver(args)
 
     if args.mode == 'train':
-        assert len(subdirs(args.train_img_dir)) == args.num_domains
-        assert len(subdirs(args.val_img_dir)) == args.num_domains
         loaders = Munch(src=get_train_loader(root=args.train_img_dir,
                                              labels=args.domains,
                                              which='source',
@@ -61,8 +59,6 @@ def main(args):
                                             num_workers=args.num_workers))
         solver.train(loaders)
     elif args.mode == 'sample':
-        assert len(subdirs(args.src_dir)) == args.num_domains
-        assert len(subdirs(args.ref_dir)) == args.num_domains
         loaders = Munch(src=get_test_loader(root=args.src_dir,
                                             img_size=args.img_size,
                                             batch_size=args.val_batch_size,
@@ -91,7 +87,8 @@ if __name__ == '__main__':
                         help='Image resolution')
     #parser.add_argument('--num_domains', type=int, default=2,
     #                    help='Number of domains')
-    parser.add_argument('--domains', nargs='+', default="Smiling Male")
+    parser.add_argument('--domains', nargs='+',
+                        default=["Smiling", "Male", "Mustache", "Big_Lips", "Big_Nose", "Pale_Skin", "Wavy_Hair"])
     parser.add_argument('--latent_dim', type=int, default=16,
                         help='Latent vector dimension')
     parser.add_argument('--hidden_dim', type=int, default=512,
@@ -113,7 +110,7 @@ if __name__ == '__main__':
     parser.add_argument('--w_hpf', type=float, default=1,
                         help='weight for high-pass filtering')
 
-    parser.add_argument('--lambda_ind', type=float, default=None,
+    parser.add_argument('--lambda_ind', type=float, default=1,
                         help='Weight for independent domain loss')
 
     # training arguments
@@ -139,6 +136,8 @@ if __name__ == '__main__':
                         help='Weight decay for optimizer')
     parser.add_argument('--num_outs_per_domain', type=int, default=10,
                         help='Number of generated images per domain during sampling')
+    parser.add_argument('--multi_gpus', action="store_true")
+
 
     # misc
     parser.add_argument('--mode', type=str, required=True,
@@ -150,9 +149,9 @@ if __name__ == '__main__':
                         help='Seed for random number generator')
 
     # directory for training
-    parser.add_argument('--train_img_dir', type=str, default='data/celeba_hq/train',
+    parser.add_argument('--train_img_dir', type=str, default='/data/celeba_hq/train',
                         help='Directory containing training images')
-    parser.add_argument('--val_img_dir', type=str, default='data/celeba_hq/val',
+    parser.add_argument('--val_img_dir', type=str, default='/data/celeba_hq/val',
                         help='Directory containing validation images')
     parser.add_argument('--sample_dir', type=str, default='expr/samples',
                         help='Directory for saving generated images')
@@ -180,7 +179,7 @@ if __name__ == '__main__':
     parser.add_argument('--lm_path', type=str, default='expr/checkpoints/celeba_lm_mean.npz')
 
     # step size
-    parser.add_argument('--print_every', type=int, default=10)
+    parser.add_argument('--print_every', type=int, default=50)
     parser.add_argument('--sample_every', type=int, default=5000)
     parser.add_argument('--save_every', type=int, default=10000)
     parser.add_argument('--eval_every', type=int, default=50000)

@@ -26,7 +26,10 @@ class CheckpointIO(object):
         print('Saving checkpoint into %s...' % fname)
         outdict = {}
         for name, module in self.module_dict.items():
-            outdict[name] = module.state_dict()
+            if isinstance(module, torch.nn.DataParallel):
+                outdict[name] = module.module.state_dict()
+            else:
+                outdict[name] = module.state_dict()
         torch.save(outdict, fname)
 
     def load(self, step):
@@ -38,4 +41,7 @@ class CheckpointIO(object):
         else:
             module_dict = torch.load(fname, map_location=torch.device('cpu'))
         for name, module in self.module_dict.items():
-            module.load_state_dict(module_dict[name])
+            if isinstance(module, torch.nn.DataParallel):
+                module.module.load_state_dict(module_dict[name])
+            else:
+                module.load_state_dict(module_dict[name])

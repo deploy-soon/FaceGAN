@@ -92,7 +92,6 @@ class CelebaMultiLabelDataset(data.Dataset):
         Wavy_Hair Wearing_Earrings Wearing_Hat Wearing_Lipstick
         Wearing_Necklace Wearing_Necktie Young
         """
-        self.samples.self.targets = self._make_dataset(root)
         self.transform = transform
         self.labels = labels
 
@@ -109,7 +108,7 @@ class CelebaMultiLabelDataset(data.Dataset):
                 assert len(labels) == len(headers)
                 for header, label in zip(headers, labels):
                     if label == '1' and header in self.labels:
-                        _mapper.setdefault(file_name, []).append(labels.index(header))
+                        _mapper.setdefault(file_name, []).append(self.labels.index(header))
 
         self.celeba_mapper = {}
         with open("expr/CelebA-HQ-to-CelebA-mapping.txt", "r") as fin:
@@ -117,17 +116,20 @@ class CelebaMultiLabelDataset(data.Dataset):
             count = 0
             for line in fin.readlines():
                 _, _, file_name = line.split()
-                self.celeba_mapper[file_name] = _mapper[f"{count}.jpg"]
+                org_name = f"{count}.jpg"
+                if org_name in _mapper:
+                    self.celeba_mapper[file_name] = _mapper[f"{count}.jpg"]
                 count += 1
 
         self.samples, self.targets = self._make_dataset(root)
+        print("len dataset", len(self.targets))
 
     def _make_dataset(self, root):
         #TODO: loading dataset from origin Celeba, currently from stargan parsed dataset
         images, labels = [], []
         for domain in ["male", "female"]:
             for fname in os.listdir(pjoin(root, domain)):
-                if len(self.celeba_mapper[fname]) < 2:
+                if len(self.celeba_mapper.get(fname, [])) < 2:
                     continue
                 images.append(pjoin(root, domain, fname))
                 labels.append(self.celeba_mapper[fname])
@@ -149,13 +151,13 @@ class CelebaMultiLabelDataset(data.Dataset):
 class CelebaMultiLabelRefDataset(CelebaMultiLabelDataset):
 
     def __init__(self, root, labels, transform=None):
-        super(CelebaMultiLabelRefDataset, self).__init__()
+        super(CelebaMultiLabelRefDataset, self).__init__(root, labels, transform)
 
     def _make_dataset(self, root):
         _images, _labels = [], []
         for domain in ["male", "female"]:
             for fname in os.listdir(pjoin(root, domain)):
-                if len(self.celeba_mapper[fname]) < 2:
+                if len(self.celeba_mapper.get(fname, [])) < 2:
                     continue
                 _images.append(pjoin(root, domain, fname))
                 _labels.append(self.celeba_mapper[fname])
@@ -165,13 +167,13 @@ class CelebaMultiLabelRefDataset(CelebaMultiLabelDataset):
 
                 _fnames = []
                 for image, label in zip(_images, _labels):
-                    if label1 in label and label2 in lable:
+                    if label1 in label and label2 in label:
                         _fnames.append(image)
-                fnames1 += len(_fnames)
+                fnames1 += _fnames
                 fnames2 += random.sample(_fnames, len(_fnames))
                 labels += [(label1, label2)] * len(_fnames)
 
-        return list(zip(fnames, fnames2)), labels
+        return list(zip(fnames1, fnames2)), labels
 
     def __getitem__(self, index):
         fname, fname2 = self.samples[index]
@@ -221,7 +223,7 @@ def get_train_loader(root, labels=["Male", "Smiling"], which='source', img_size=
         dataset = CelebaMultiLabelDataset(root, labels, transform)
     elif which == 'reference':
         dataset = CelebaMultiLabelRefDataset(root, labels, transform)
-        sampler = _make_balanced_tuple_sampler(dataset.targets):
+        sampler = _make_balanced_tuple_sampler(dataset.targets)
     else:
         raise NotImplementedError
 
@@ -358,7 +360,7 @@ class MultiInputFetcher:
             x_ref, x_ref2, y1_ref, y2_ref = self._fetch_refs()
             z_trg = torch.randn(x.size(0), self.latent_dim)
             z_trg2 = torch.randn(x.size(0), self.latent_dim)
-            inputs = Munch(x_src=x, y1_src=y1, y2_src=y2, y1_ref=y1_ref, y2_ref=y2_ref
+            inputs = Munch(x_src=x, y1_src=y1, y2_src=y2, y1_ref=y1_ref, y2_ref=y2_ref,
                            x_ref=x_ref, x_ref2=x_ref2,
                            z_trg=z_trg, z_trg2=z_trg2)
         elif self.mode == 'val':

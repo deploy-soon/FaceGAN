@@ -294,6 +294,16 @@ def build_model(args):
     mapping_network_ema = copy.deepcopy(mapping_network)
     style_encoder_ema = copy.deepcopy(style_encoder)
 
+    if args.multi_gpus and torch.cuda.device_count() > 1:
+        print("Hello", torch.cuda.device_count(), "gpus~~")
+        generator = nn.DataParallel(generator)
+        mapping_network = nn.DataParallel(mapping_network)
+        style_encoder = nn.DataParallel(style_encoder)
+        discriminator = nn.DataParallel(discriminator)
+        generator_ema = nn.DataParallel(generator_ema)
+        mapping_network_ema = nn.DataParallel(mapping_network_ema)
+        style_encoder_ema = nn.DataParallel(style_encoder_ema)
+
     nets = Munch(generator=generator,
                  mapping_network=mapping_network,
                  style_encoder=style_encoder,
@@ -304,6 +314,8 @@ def build_model(args):
 
     if args.w_hpf > 0:
         fan = FAN(fname_pretrained=args.wing_path).eval()
+        if args.multi_gpus and torch.cuda.device_count() > 1:
+            fan = nn.DataParallel(fan)
         nets.fan = fan
         nets_ema.fan = fan
 
