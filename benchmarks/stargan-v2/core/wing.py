@@ -123,8 +123,9 @@ class AddCoordsTh(nn.Module):
             xx_boundary_channel = torch.where(boundary_channel > 0.05, self.x_coords, zero_tensor).to(zero_tensor.device)
             yy_boundary_channel = torch.where(boundary_channel > 0.05, self.y_coords, zero_tensor).to(zero_tensor.device)
             coords = torch.cat([coords, xx_boundary_channel, yy_boundary_channel], dim=1)
-
+        coords = coords.to(x.device)
         x_and_coords = torch.cat([x, coords], dim=1)
+
         return x_and_coords
 
 
@@ -222,7 +223,10 @@ class FAN(nn.Module):
                               if k in model_weights})
         self.load_state_dict(model_weights)
 
-    def forward(self, x):
+    def _forward(self, x):
+        """
+        deprecated for multi gpu
+        """
         x, _ = self.conv1(x)
         x = F.relu(self.bn1(x), True)
         x = F.avg_pool2d(self.conv2(x), 2, stride=2)
@@ -251,6 +255,39 @@ class FAN(nn.Module):
         x = F.interpolate(x, size=256, mode='bilinear')
         x_01 = x*0.5 + 0.5
         outputs, _ = self(x_01)
+        heatmaps = outputs[-1][:, :-1, :, :]
+        scale_factor = x.size(2) // heatmaps.size(2)
+        if b_preprocess:
+            heatmaps = F.interpolate(heatmaps, scale_factor=scale_factor,
+                                     mode='bilinear', align_corners=True)
+            heatmaps = preprocess(heatmaps)
+        return heatmaps
+
+    @torch.no_grad()
+    def forward(self, x, b_preprocess=True):
+        x = F.interpolate(x, size=256, mode='bilinear')
+        x_01 = x*0.5 + 0.5
+
+
+        x, _ = self.conv1(x)
+        x = F.relu(self.bn1(x), True)
+        x = F.avg_pool2d(self.conv2(x), 2, stride=2)
+        x = self.conv3(x)
+        x = self.conv4(x)
+
+        outputs = []
+        tmp_out = None
+        ll, boundary_channel = self._modules['m0'](x, tmp_out)
+        ll = self._modules['top_m_0'](ll)
+        ll = F.relu(self._modules['bn_end0']
+                    (self._modules['conv_last0'](ll)), True)
+
+        # Predict heatmaps
+        tmp_out = self._modules['l0'](ll)
+        if self.end_relu:
+            tmp_out = F.relu(tmp_out)  # HACK: Added relu
+        outputs.append(tmp_out)
+
         heatmaps = outputs[-1][:, :-1, :, :]
         scale_factor = x.size(2) // heatmaps.size(2)
         if b_preprocess:

@@ -149,9 +149,9 @@ if __name__ == '__main__':
                         help='Seed for random number generator')
 
     # directory for training
-    parser.add_argument('--train_img_dir', type=str, default='/data/celeba_hq/train',
+    parser.add_argument('--train_img_dir', type=str, default='/data/celeba_hq/train/train',
                         help='Directory containing training images')
-    parser.add_argument('--val_img_dir', type=str, default='/data/celeba_hq/val',
+    parser.add_argument('--val_img_dir', type=str, default='/data/celeba_hq/train/val',
                         help='Directory containing validation images')
     parser.add_argument('--sample_dir', type=str, default='expr/samples',
                         help='Directory for saving generated images')

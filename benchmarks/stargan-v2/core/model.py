@@ -120,7 +120,7 @@ class AdainResBlk(nn.Module):
         return out
 
 
-class HighPass(nn.Module):
+class _HighPass(nn.Module):
     def __init__(self, w_hpf, device):
         super(HighPass, self).__init__()
         self.filter = torch.tensor([[-1, -1, -1],
@@ -131,6 +131,18 @@ class HighPass(nn.Module):
         filter = self.filter.unsqueeze(0).unsqueeze(1).repeat(x.size(1), 1, 1, 1)
         return F.conv2d(x, filter, padding=1, groups=x.size(1))
 
+class HighPass(nn.Module):
+    def __init__(self, w_hpf, device):
+        super(HighPass, self).__init__()
+        self.w_hpf = w_hpf
+
+    def forward(self, x):
+        filter = torch.tensor([[-1, -1, -1],
+                               [-1, 8., -1],
+                               [-1, -1, -1]]).to(x.device) / self.w_hpf
+
+        filter = filter.unsqueeze(0).unsqueeze(1).repeat(x.size(1), 1, 1, 1)
+        return F.conv2d(x, filter, padding=1, groups=x.size(1))
 
 class Generator(nn.Module):
     def __init__(self, img_size=256, style_dim=64, max_conv_dim=512, w_hpf=1):
