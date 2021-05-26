@@ -66,10 +66,10 @@ def save_image(x, ncol, filename):
 def translate_and_reconstruct(nets, args, x_src, y_src, x_ref, y_ref, filename):
     N, C, H, W = x_src.size()
     s_ref = nets.style_encoder(x_ref, y_ref)
-    masks = nets.fan.get_heatmap(x_src) if args.w_hpf > 0 else None
+    masks = nets.fan(x_src) if args.w_hpf > 0 else None
     x_fake = nets.generator(x_src, s_ref, masks=masks)
     s_src = nets.style_encoder(x_src, y_src)
-    masks = nets.fan.get_heatmap(x_fake) if args.w_hpf > 0 else None
+    masks = nets.fan(x_fake) if args.w_hpf > 0 else None
     x_rec = nets.generator(x_fake, s_src, masks=masks)
     x_concat = [x_src, x_ref, x_fake, x_rec]
     x_concat = torch.cat(x_concat, dim=0)
@@ -82,7 +82,7 @@ def translate_using_latent(nets, args, x_src, y_trg_list, z_trg_list, psi, filen
     N, C, H, W = x_src.size()
     latent_dim = z_trg_list[0].size(1)
     x_concat = [x_src]
-    masks = nets.fan.get_heatmap(x_src) if args.w_hpf > 0 else None
+    masks = nets.fan(x_src) if args.w_hpf > 0 else None
 
     for i, y_trg in enumerate(y_trg_list):
         z_many = torch.randn(10000, latent_dim).to(x_src.device)
@@ -107,7 +107,7 @@ def translate_using_reference(nets, args, x_src, x_ref, y_ref, filename):
     wb = torch.ones(1, C, H, W).to(x_src.device)
     x_src_with_wb = torch.cat([wb, x_src], dim=0)
 
-    masks = nets.fan.get_heatmap(x_src) if args.w_hpf > 0 else None
+    masks = nets.fan(x_src) if args.w_hpf > 0 else None
     s_ref = nets.style_encoder(x_ref, y_ref)
     s_ref_list = s_ref.unsqueeze(1).repeat(1, N, 1)
     x_concat = [x_src_with_wb]
@@ -123,8 +123,8 @@ def translate_using_reference(nets, args, x_src, x_ref, y_ref, filename):
 
 @torch.no_grad()
 def debug_image(nets, args, inputs, step):
-    x_src, y_src = inputs.x_src, inputs.y_src
-    x_ref, y_ref = inputs.x_ref, inputs.y_ref
+    x_src, y_src = inputs.x_src, inputs.y1_src
+    x_ref, y_ref = inputs.x_ref, inputs.y1_ref
 
     device = inputs.x_src.device
     N = inputs.x_src.size(0)

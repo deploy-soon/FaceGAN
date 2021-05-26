@@ -254,7 +254,7 @@ class FAN(nn.Module):
         ''' outputs 0-1 normalized heatmap '''
         x = F.interpolate(x, size=256, mode='bilinear')
         x_01 = x*0.5 + 0.5
-        outputs, _ = self(x_01)
+        outputs, _ = self._forward(x_01)
         heatmaps = outputs[-1][:, :-1, :, :]
         scale_factor = x.size(2) // heatmaps.size(2)
         if b_preprocess:

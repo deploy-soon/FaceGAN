@@ -185,5 +185,5 @@ if __name__ == '__main__':
     parser.add_argument('--eval_every', type=int, default=50000)
 
     args = parser.parse_args()
-    args.num_domains = len(args.domains)
+    args.num_domains = 2 * len(args.domains)
     main(args)

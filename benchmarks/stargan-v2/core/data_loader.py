@@ -91,9 +91,16 @@ class CelebaMultiLabelDataset(data.Dataset):
         Receding_Hairline Rosy_Cheeks Sideburns Smiling Straight_Hair
         Wavy_Hair Wearing_Earrings Wearing_Hat Wearing_Lipstick
         Wearing_Necklace Wearing_Necktie Young
+
+        EXAMPLE
+        labels: ["Male", "Smiling", "Blurry"]
+        -> 0: "Male", 1: "Not_Male", 2: "Smiling", ..., 5: "Not_Blurry"
         """
         self.transform = transform
-        self.labels = labels
+        self.labels = []
+        for label in labels:
+            self.labels.append(label)
+            self.labels.append("Not_" + label)
 
         _mapper = {}
         with open("expr/CelebAMask-HQ-attribute-anno.txt", "r") as fin:
@@ -101,14 +108,13 @@ class CelebaMultiLabelDataset(data.Dataset):
             headers = fin.readline().split()
             for label in labels:
                 assert label in headers
+            labels_idx = [headers.index(label) for label in labels]
 
             for line in fin.readlines():
                 line = line.split()
                 file_name, labels = line[0], line[1:]
                 assert len(labels) == len(headers)
-                for header, label in zip(headers, labels):
-                    if label == '1' and header in self.labels:
-                        _mapper.setdefault(file_name, []).append(self.labels.index(header))
+                _mapper[file_name] = [2 * num if labels[label_idx] == '1' else 2 * num + 1 for num, label_idx in enumerate(labels_idx)]
 
         self.celeba_mapper = {}
         with open("expr/CelebA-HQ-to-CelebA-mapping.txt", "r") as fin:
