@@ -88,7 +88,7 @@ if __name__ == '__main__':
     #parser.add_argument('--num_domains', type=int, default=2,
     #                    help='Number of domains')
     parser.add_argument('--domains', nargs='+',
-                        default=["Smiling", "Male", "Mustache", "Big_Lips", "Big_Nose", "Pale_Skin", "Wavy_Hair"])
+                        default=["Male", "Smiling", "Pale_Skin", "Wavy_Hair"])
     parser.add_argument('--latent_dim', type=int, default=16,
                         help='Latent vector dimension')
     parser.add_argument('--hidden_dim', type=int, default=512,
@@ -181,8 +181,8 @@ if __name__ == '__main__':
     # step size
     parser.add_argument('--print_every', type=int, default=50)
     parser.add_argument('--sample_every', type=int, default=5000)
-    parser.add_argument('--save_every', type=int, default=10000)
-    parser.add_argument('--eval_every', type=int, default=50000)
+    parser.add_argument('--save_every', type=int, default=5000)
+    parser.add_argument('--eval_every', type=int, default=150000)
 
     args = parser.parse_args()
     args.num_domains = 2 * len(args.domains)

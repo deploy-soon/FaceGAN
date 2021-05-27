@@ -222,20 +222,23 @@ def compute_d_loss(nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg,
             s1_trg = nets.style_encoder(x_ref, y1_trg)
             s2_trg = nets.style_encoder(x_ref, y2_trg)
 
+        x_fake1 = nets.generator(x_real, s1_trg, masks)
+        x_fake2 = nets.generator(x_real, s2_trg, masks)
         if _random():
-            x_fake = nets.generator(x_real, s1_trg, masks)
             #masks1 = nets.fan.get_heatmap(x_fake) if args.w_hpf > 0 else None
-            masks1 = nets.fan(x_fake) if args.w_hpf > 0 else None
-            x_fake = nets.generator(x_fake, s2_trg, masks1)
+            masks1 = nets.fan(x_fake1) if args.w_hpf > 0 else None
+            x_fake = nets.generator(x_fake1, s2_trg, masks1)
         else:
-            x_fake = nets.generator(x_real, s2_trg, masks)
             #masks2 = nets.fan.get_heatmap(x_fake) if args.w_hpf > 0 else None
-            masks2 = nets.fan(x_fake) if args.w_hpf > 0 else None
-            x_fake = nets.generator(x_fake, s1_trg, masks2)
+            masks2 = nets.fan(x_fake2) if args.w_hpf > 0 else None
+            x_fake = nets.generator(x_fake2, s1_trg, masks2)
 
+    out1_only = nets.discriminator(x_fake1, y1_trg)
+    out2_only = nets.discriminator(x_fake2, y2_trg)
     out1 = nets.discriminator(x_fake, y1_trg)
     out2 = nets.discriminator(x_fake, y2_trg)
-    loss_fake = 0.5 * (adv_loss(out1, 0) + adv_loss(out2, 0))
+    loss_fake = 0.25 * (adv_loss(out1, 0) + adv_loss(out2, 0))
+    loss_fake += 0.25 * (adv_loss(out1_only, 0) + adv_loss(out2_only, 0))
 
     loss = loss_real + loss_fake + args.lambda_reg * loss_reg
     return loss, Munch(real=loss_real.item(),
@@ -272,9 +275,12 @@ def compute_g_loss(nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg,
 
     x_fake = x_fake12 if _random() else x_fake21
 
+    out1_only = nets.discriminator(x_fake1, y1_trg)
+    out2_only = nets.discriminator(x_fake2, y2_trg)
     out1 = nets.discriminator(x_fake, y1_trg)
     out2 = nets.discriminator(x_fake, y2_trg)
-    loss_adv = 0.5 * (adv_loss(out1, 1) + adv_loss(out2, 1))
+    loss_adv = 0.25 * (adv_loss(out1, 1) + adv_loss(out2, 1))
+    loss_adv += 0.25 * (adv_loss(out1_only, 1) + adv_loss(out2_only, 1))
 
     # style reconstruction loss
     s1_pred = nets.style_encoder(x_fake, y1_trg)
