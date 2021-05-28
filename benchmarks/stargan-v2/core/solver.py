@@ -329,7 +329,7 @@ def compute_g_loss(nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg,
         s2_trg = nets.mapping_network(z_trg, y2_trg)
     else:
         s1_trg = nets.style_encoder(x_ref, y1_trg)
-        s2_trg = nets.style_encoder(x_ref, y2_trg)
+        s2_trg = nets.style_encoder(x_ref2, y2_trg)
 
     x_fake1 = nets.generator(x_real, s1_trg, masks)
     #masks1 = nets.fan.get_heatmap(x_fake1) if args.w_hpf > 0 else None
@@ -373,7 +373,7 @@ def compute_g_loss(nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg,
         s2_trg2 = nets.mapping_network(z_trg2, y2_trg)
     else:
         s1_trg2 = nets.style_encoder(x_ref2, y1_trg)
-        s2_trg2 = nets.style_encoder(x_ref2, y2_trg)
+        s2_trg2 = nets.style_encoder(x_ref, y2_trg)
 
     x_fake1_2 = nets.generator(x_real, s1_trg2, masks=masks)
     x_fake1_2 = x_fake1_2.detach()
