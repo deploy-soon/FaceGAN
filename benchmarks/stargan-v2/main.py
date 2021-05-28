@@ -121,7 +121,7 @@ if __name__ == '__main__':
                         help='Probabilty of using random-resized cropping')
     parser.add_argument('--total_iters', type=int, default=100000,
                         help='Number of total iterations')
-    parser.add_argument('--resume_iter', type=int, default=15000,
+    parser.add_argument('--resume_iter', type=int, default=0,
                         help='Iterations to resume training/testing')
     parser.add_argument('--batch_size', type=int, default=2,
                         help='Batch size for training')
@@ -146,7 +146,7 @@ if __name__ == '__main__':
     '''parser.add_argument('--mode', type=str, required=True,
                         choices=['train', 'sample', 'eval', 'align', 'generate'],
                         help='This argument is used in solver')'''
-    parser.add_argument('--mode', type=str, default='generate')
+    parser.add_argument('--mode', type=str, default='train')
     parser.add_argument('--num_workers', type=int, default=4,
                         help='Number of workers used in DataLoader')
     parser.add_argument('--seed', type=int, default=777,
