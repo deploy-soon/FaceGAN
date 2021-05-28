@@ -14,10 +14,14 @@ import time
 import random
 import datetime
 from munch import Munch
+import glob
+from PIL import Image
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision.utils import save_image
+from torchvision import transforms
 
 from core.model import build_model
 from core.checkpoint import CheckpointIO
@@ -199,6 +203,70 @@ class Solver(nn.Module):
         calculate_metrics(nets_ema, args, step=resume_iter, mode='latent')
         calculate_metrics(nets_ema, args, step=resume_iter, mode='reference')
 
+    @torch.no_grad()
+    def generate(self):
+        args = self.args
+        nets_ema = self.nets_ema
+        labellist = []
+        for label in args.domains:
+            labellist.append(label)
+            labellist.append("Not_" + label)
+
+        os.makedirs(args.result_dir, exist_ok=True)
+        self._load_checkpoint(args.resume_iter)
+
+        transform = transforms.Compose([
+            transforms.Resize([args.img_size, args.img_size]),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5],
+                                 std=[0.5, 0.5, 0.5])])
+
+        # load a src img
+        srcpaths = os.path.join(args.src_dir, '*.jpg')
+        globpath = glob.glob(srcpaths.format())
+        for srcpath in globpath:
+            src_img = Image.open(srcpath).convert('RGB')
+
+        src_img = transform(src_img).unsqueeze(0).to(self.device)
+
+        # load ref imgs and labels
+        with open(os.path.join(args.ref_dir, 'ref_labels.txt')) as f:
+            labels = f.readlines()
+            # now only for 2 mixed labels
+            # filename \t label
+            assert len(labels) == 2
+
+        line1 = labels[0][:-1].split('\t')
+        ref_img1 = Image.open(os.path.join(args.ref_dir, line1[0])).convert('RGB')
+        ref_img1 = transform(ref_img1)
+        ref_img1 = ref_img1.unsqueeze(0).to(self.device)
+        label1 = torch.LongTensor(1).to(self.device)
+        for idx in range(len(labellist)):
+            if labellist[idx] == line1[1]:
+                label1[0] = idx
+                break
+
+        line2 = labels[1][:-1].split('\t')
+        ref_img2 = Image.open(os.path.join(args.ref_dir, line2[0])).convert('RGB')
+        ref_img2 = transform(ref_img2)
+        ref_img2 = ref_img2.unsqueeze(0).to(self.device)
+        label2 = torch.LongTensor(1).to(self.device)
+        for idx in range(len(labellist)):
+            if labellist[idx] == line2[1]:
+                label2[0] = idx
+                break
+
+        style1 = nets_ema.style_encoder(ref_img1, label1)
+        style2 = nets_ema.style_encoder(ref_img2, label2)
+
+        masks = nets_ema.fan(src_img) if args.w_hpf > 0 else None
+        newimg = nets_ema.generator(src_img, style1, masks)
+        masks = nets_ema.fan(newimg) if args.w_hpf > 0 else None
+        newimg = nets_ema.generator(newimg, style2, masks)
+
+        save_image(newimg, os.path.join(args.result_dir, 'result.jpg'))
+
+
 def _random():
     return random.randint(0, 1) == 0
 
@@ -283,9 +351,12 @@ def compute_g_loss(nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg,
     loss_adv += 0.25 * (adv_loss(out1_only, 1) + adv_loss(out2_only, 1))
 
     # style reconstruction loss
-    s1_pred = nets.style_encoder(x_fake, y1_trg)
-    s2_pred = nets.style_encoder(x_fake, y2_trg)
-    loss_sty = 0.5 * torch.mean(torch.abs(s1_pred - s1_trg) + torch.abs(s2_pred - s2_trg))
+    s12_pred1 = nets.style_encoder(x_fake, y1_trg)
+    s12_pred2 = nets.style_encoder(x_fake, y2_trg)
+    s1_pred = nets.style_encoder(x_fake1, y1_trg)
+    s2_pred = nets.style_encoder(x_fake2, y2_trg)
+    loss_sty = 0.25 * torch.mean(torch.abs(s1_pred - s1_trg) + torch.abs(s2_pred - s2_trg))
+    loss_sty += 0.25 * torch.mean(torch.abs(s12_pred1 - s1_trg) + torch.abs(s12_pred2 - s2_trg))
 
     # independent domain loss
     #x_rec1 = nets.generator(x_fake, s1_trg, masks=masks)

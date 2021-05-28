@@ -75,6 +75,9 @@ def main(args):
     elif args.mode == 'align':
         from core.wing import align_faces
         align_faces(args, args.inp_dir, args.out_dir)
+    elif args.mode == 'generate':
+        # now only for generating an image
+        solver.generate()
     else:
         raise NotImplementedError
 
@@ -118,9 +121,9 @@ if __name__ == '__main__':
                         help='Probabilty of using random-resized cropping')
     parser.add_argument('--total_iters', type=int, default=100000,
                         help='Number of total iterations')
-    parser.add_argument('--resume_iter', type=int, default=0,
+    parser.add_argument('--resume_iter', type=int, default=15000,
                         help='Iterations to resume training/testing')
-    parser.add_argument('--batch_size', type=int, default=8,
+    parser.add_argument('--batch_size', type=int, default=2,
                         help='Batch size for training')
     parser.add_argument('--val_batch_size', type=int, default=32,
                         help='Batch size for validation')
@@ -140,18 +143,19 @@ if __name__ == '__main__':
 
 
     # misc
-    parser.add_argument('--mode', type=str, required=True,
-                        choices=['train', 'sample', 'eval', 'align'],
-                        help='This argument is used in solver')
+    '''parser.add_argument('--mode', type=str, required=True,
+                        choices=['train', 'sample', 'eval', 'align', 'generate'],
+                        help='This argument is used in solver')'''
+    parser.add_argument('--mode', type=str, default='generate')
     parser.add_argument('--num_workers', type=int, default=4,
                         help='Number of workers used in DataLoader')
     parser.add_argument('--seed', type=int, default=777,
                         help='Seed for random number generator')
 
     # directory for training
-    parser.add_argument('--train_img_dir', type=str, default='/data/celeba_hq/train/train',
+    parser.add_argument('--train_img_dir', type=str, default='data/celeba_hq/train',
                         help='Directory containing training images')
-    parser.add_argument('--val_img_dir', type=str, default='/data/celeba_hq/train/val',
+    parser.add_argument('--val_img_dir', type=str, default='data/celeba_hq/train',
                         help='Directory containing validation images')
     parser.add_argument('--sample_dir', type=str, default='expr/samples',
                         help='Directory for saving generated images')
@@ -165,9 +169,9 @@ if __name__ == '__main__':
     # directory for testing
     parser.add_argument('--result_dir', type=str, default='expr/results',
                         help='Directory for saving generated images and videos')
-    parser.add_argument('--src_dir', type=str, default='assets/representative/celeba_hq/src',
+    parser.add_argument('--src_dir', type=str, default='generate/src',
                         help='Directory containing input source images')
-    parser.add_argument('--ref_dir', type=str, default='assets/representative/celeba_hq/ref',
+    parser.add_argument('--ref_dir', type=str, default='generate/ref',
                         help='Directory containing input reference images')
     parser.add_argument('--inp_dir', type=str, default='assets/representative/custom/female',
                         help='input directory when aligning faces')

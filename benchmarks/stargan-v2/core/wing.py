@@ -268,8 +268,7 @@ class FAN(nn.Module):
         x = F.interpolate(x, size=256, mode='bilinear')
         x_01 = x*0.5 + 0.5
 
-
-        x, _ = self.conv1(x)
+        x, _ = self.conv1(x_01)
         x = F.relu(self.bn1(x), True)
         x = F.avg_pool2d(self.conv2(x), 2, stride=2)
         x = self.conv3(x)
