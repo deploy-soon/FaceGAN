@@ -119,7 +119,7 @@ class Solver(nn.Module):
             optims.discriminator.step()
 
             d_loss, d_losses_ref = compute_d_loss(
-                nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg, x_ref=x_ref, masks=masks)
+                nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg, x_refs=[x_ref, x_ref2], masks=masks)
             self._reset_grad()
             d_loss.backward()
             optims.discriminator.step()
@@ -271,9 +271,9 @@ def _random():
     return random.randint(0, 1) == 0
 
 def compute_d_loss(nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg,
-                   z_trg=None, x_ref=None, masks=None):
+                   z_trg=None, x_refs=None, masks=None):
 
-    assert (z_trg is None) != (x_ref is None)
+    assert (z_trg is None) != (x_refs is None)
     # with real images
     x_real.requires_grad_()
     out1 = nets.discriminator(x_real, y1_org)
@@ -287,8 +287,8 @@ def compute_d_loss(nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg,
             s1_trg = nets.mapping_network(z_trg, y1_trg)
             s2_trg = nets.mapping_network(z_trg, y2_trg)
         else:  # x_ref is not None
-            s1_trg = nets.style_encoder(x_ref, y1_trg)
-            s2_trg = nets.style_encoder(x_ref, y2_trg)
+            s1_trg = nets.style_encoder(x_refs[0], y1_trg)
+            s2_trg = nets.style_encoder(x_refs[1], y2_trg)
 
         x_fake1 = nets.generator(x_real, s1_trg, masks)
         x_fake2 = nets.generator(x_real, s2_trg, masks)
