@@ -184,6 +184,8 @@ class CelebaMultiLabelRefDataset(CelebaMultiLabelDataset):
     def __getitem__(self, index):
         fname, fname2 = self.samples[index]
         label1, label2 = self.targets[index]
+        label1, label2 = random.sample([label1, label2], 2)
+
         img = Image.open(fname).convert('RGB')
         img2 = Image.open(fname2).convert('RGB')
         if self.transform is not None:
