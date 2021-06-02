@@ -179,8 +179,8 @@ if __name__ == '__main__':
                         help='output directory when aligning faces')
 
     # face alignment
-    parser.add_argument('--wing_path', type=str, default='expr/checkpoints/wing.ckpt')
-    parser.add_argument('--lm_path', type=str, default='expr/checkpoints/celeba_lm_mean.npz')
+    parser.add_argument('--wing_path', type=str, default='expr/wing.ckpt')
+    parser.add_argument('--lm_path', type=str, default='expr/celeba_lm_mean.npz')
 
     # step size
     parser.add_argument('--print_every', type=int, default=50)
