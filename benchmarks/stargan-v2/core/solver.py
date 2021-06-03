@@ -185,10 +185,11 @@ class Solver(nn.Module):
 
         src = next(InputFetcher(loaders.src, None, args.latent_dim, 'test'))
         ref = next(InputFetcher(loaders.ref, None, args.latent_dim, 'test'))
-
         fname = ospj(args.result_dir, 'reference.jpg')
         print('Working on {}...'.format(fname))
-        utils.translate_using_reference(nets_ema, args, src.x, ref.x, ref.y1, fname)
+        print("src y", src.y)
+        print("ref y", ref.y)
+        utils.translate_using_reference(nets_ema, args, src.x, ref.x, ref.y, fname)
 
         #fname = ospj(args.result_dir, 'video_ref.mp4')
         #print('Working on {}...'.format(fname))
@@ -276,21 +277,26 @@ def compute_d_loss(nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg,
     assert (z_trg is None) != (x_refs is None)
     # with real images
     x_real.requires_grad_()
-    out = nets.discriminator(x_real, y1_org)
-    loss_real = adv_loss(out, 1)
-    loss_reg = r1_reg(out, x_real)
+    out1 = nets.discriminator(x_real, y1_org)
+    out2 = nets.discriminator(x_real, y2_org)
+    loss_real = 0.5 * (adv_loss(out1, 1) + adv_loss(out2, 1))
+    loss_reg = 0.5 * (r1_reg(out1, x_real) + r1_reg(out2, x_real))
 
     # with fake images
     with torch.no_grad():
         if z_trg is not None:
-            s_trg = nets.mapping_network(z_trg, y1_trg)
+            s1_trg = nets.mapping_network(z_trg, y1_trg)
+            s2_trg = nets.mapping_network(z_trg, y2_trg)
         else:  # x_ref is not None
             x_ref, x_ref2 = x_refs
-            s_trg = nets.style_encoder(x_ref, y1_trg)
+            s1_trg = nets.style_encoder(x_ref, y1_trg)
+            s2_trg = nets.style_encoder(x_ref2, y2_trg)
 
-        x_fake = nets.generator(x_real, s_trg, masks=masks)
-    out = nets.discriminator(x_fake, y1_trg)
-    loss_fake = adv_loss(out, 0)
+        x_fake1 = nets.generator(x_real, s1_trg, masks=masks)
+        x_fake2 = nets.generator(x_real, s2_trg, masks=masks)
+    out1 = nets.discriminator(x_fake1, y1_trg)
+    out2 = nets.discriminator(x_fake2, y2_trg)
+    loss_fake = 0.5 * (adv_loss(out1, 0) + adv_loss(out2, 0))
 
     loss = loss_real + loss_fake + args.lambda_reg * loss_reg
     return loss, Munch(real=loss_real.item(),
@@ -309,17 +315,21 @@ def compute_g_loss(nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg,
 
     # adversarial loss
     if z_trgs is not None:
-        s_trg = nets.mapping_network(z_trg, y1_trg)
+        s1_trg = nets.mapping_network(z_trg, y1_trg)
+        s2_trg = nets.mapping_network(z_trg, y2_trg)
     else:
-        s_trg = nets.style_encoder(x_ref, y1_trg)
+        s1_trg = nets.style_encoder(x_ref, y1_trg)
+        s2_trg = nets.style_encoder(x_ref2, y2_trg)
 
-    x_fake = nets.generator(x_real, s_trg, masks=masks)
-    out = nets.discriminator(x_fake, y1_trg)
-    loss_adv = adv_loss(out, 1)
+    x_fake = nets.generator(x_real, s1_trg, masks=masks)
+    x_fake2 = nets.generator(x_real, s2_trg, masks=masks)
+    out1 = nets.discriminator(x_fake, y1_trg)
+    out2 = nets.discriminator(x_fake2, y2_trg)
+    loss_adv = 0.5 * (adv_loss(out1, 1) + adv_loss(out2, 1))
 
     # style reconstruction loss
     s_pred = nets.style_encoder(x_fake, y1_trg)
-    loss_sty = torch.mean(torch.abs(s_pred - s_trg))
+    loss_sty = torch.mean(torch.abs(s_pred - s1_trg))
 
     # diversity sensitive loss
     if z_trgs is not None:

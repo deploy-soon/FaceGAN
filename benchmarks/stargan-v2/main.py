@@ -59,15 +59,17 @@ def main(args):
                                             num_workers=args.num_workers))
         solver.train(loaders)
     elif args.mode == 'sample':
-        loaders = Munch(src=get_test_loader(root=args.src_dir,
+        loaders = Munch(src=get_train_loader(root=args.src_dir,
+                                            labels=args.domains,
+                                             which='source',
                                             img_size=args.img_size,
                                             batch_size=args.val_batch_size,
-                                            shuffle=False,
                                             num_workers=args.num_workers),
-                        ref=get_test_loader(root=args.ref_dir,
+                        ref=get_train_loader(root=args.ref_dir,
+                                            labels=args.domains,
+                                             which='source',
                                             img_size=args.img_size,
                                             batch_size=args.val_batch_size,
-                                            shuffle=False,
                                             num_workers=args.num_workers))
         solver.sample(loaders)
     elif args.mode == 'eval':
