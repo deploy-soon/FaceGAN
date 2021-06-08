@@ -192,4 +192,5 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     args.num_domains = 2 * len(args.domains)
+    #args.num_domains = 2
     main(args)

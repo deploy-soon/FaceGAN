@@ -104,6 +104,7 @@ class Solver(nn.Module):
         for i in range(args.resume_iter, args.total_iters):
             # fetch images and labels
             inputs = next(fetcher)
+
             x_real, y1_org, y2_org = inputs.x_src, inputs.y1_src, inputs.y2_src
             x_ref, x_ref2, y1_trg, y2_trg = inputs.x_ref, inputs.x_ref2, inputs.y1_ref, inputs.y2_ref
             z_trg, z_trg2 = inputs.z_trg, inputs.z_trg2
@@ -340,6 +341,12 @@ def compute_g_loss(nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg,
     x_fake2 = x_fake2.detach()
     loss_ds = torch.mean(torch.abs(x_fake - x_fake2))
 
+    # independent style loss
+    masks1 = nets.fan(x_fake) if args.w_hpf > 0 else None
+    x_fake12 = nets.generator(x_fake, s2_trg, masks1)
+    s12_pred = nets.style_encoder(x_fake12, y1_trg)
+    loss_ind = torch.mean(torch.abs(s_pred - s12_pred))
+
     # cycle-consistency loss
     masks = nets.fan.get_heatmap(x_fake) if args.w_hpf > 0 else None
     s_org = nets.style_encoder(x_real, y1_org)
@@ -347,12 +354,12 @@ def compute_g_loss(nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg,
     loss_cyc = torch.mean(torch.abs(x_rec - x_real))
 
     loss = loss_adv + args.lambda_sty * loss_sty \
-        - args.lambda_ds * loss_ds + args.lambda_cyc * loss_cyc
+        - args.lambda_ds * loss_ds + args.lambda_cyc * loss_cyc + args.lambda_ind * loss_ind
     return loss, Munch(adv=loss_adv.item(),
                        sty=loss_sty.item(),
                        ds=loss_ds.item(),
-                       cyc=loss_cyc.item())
-
+                       cyc=loss_cyc.item(),
+                       ind=loss_ind.item())
 
 def moving_average(model, model_test, beta=0.999):
     for param, param_test in zip(model.parameters(), model_test.parameters()):
