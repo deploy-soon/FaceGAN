@@ -137,6 +137,10 @@ class CelebaMultiLabelDataset(data.Dataset):
             for fname in os.listdir(pjoin(root, domain)):
                 if len(self.celeba_mapper.get(fname, [])) < 2:
                     continue
+                #if 2 in self.celeba_mapper[fname]:
+                #    continue
+                #if 0 in self.celeba_mapper[fname]:
+                #    continue
                 images.append(pjoin(root, domain, fname))
                 labels.append(self.celeba_mapper[fname])
         return images, labels
@@ -165,6 +169,10 @@ class CelebaMultiLabelRefDataset(CelebaMultiLabelDataset):
             for fname in os.listdir(pjoin(root, domain)):
                 if len(self.celeba_mapper.get(fname, [])) < 2:
                     continue
+                #if 2 in self.celeba_mapper[fname]:
+                #    continue
+                #if 0 in self.celeba_mapper[fname]:
+                #    continue
                 _images.append(pjoin(root, domain, fname))
                 _labels.append(self.celeba_mapper[fname])
         fnames1, fnames2, labels = [], [], []
@@ -184,6 +192,8 @@ class CelebaMultiLabelRefDataset(CelebaMultiLabelDataset):
     def __getitem__(self, index):
         fname, fname2 = self.samples[index]
         label1, label2 = self.targets[index]
+        label1, label2 = random.sample([label1, label2], 2)
+
         img = Image.open(fname).convert('RGB')
         img2 = Image.open(fname2).convert('RGB')
         if self.transform is not None:
@@ -229,7 +239,7 @@ def get_train_loader(root, labels=["Male", "Smiling"], which='source', img_size=
         dataset = CelebaMultiLabelDataset(root, labels, transform)
     elif which == 'reference':
         dataset = CelebaMultiLabelRefDataset(root, labels, transform)
-        sampler = _make_balanced_tuple_sampler(dataset.targets)
+        #sampler = _make_balanced_tuple_sampler(dataset.targets)
     else:
         raise NotImplementedError
 

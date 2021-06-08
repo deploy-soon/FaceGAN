@@ -59,15 +59,17 @@ def main(args):
                                             num_workers=args.num_workers))
         solver.train(loaders)
     elif args.mode == 'sample':
-        loaders = Munch(src=get_test_loader(root=args.src_dir,
+        loaders = Munch(src=get_train_loader(root=args.src_dir,
+                                            labels=args.domains,
+                                             which='source',
                                             img_size=args.img_size,
                                             batch_size=args.val_batch_size,
-                                            shuffle=False,
                                             num_workers=args.num_workers),
-                        ref=get_test_loader(root=args.ref_dir,
+                        ref=get_train_loader(root=args.ref_dir,
+                                            labels=args.domains,
+                                             which='source',
                                             img_size=args.img_size,
                                             batch_size=args.val_batch_size,
-                                            shuffle=False,
                                             num_workers=args.num_workers))
         solver.sample(loaders)
     elif args.mode == 'eval':
@@ -179,8 +181,8 @@ if __name__ == '__main__':
                         help='output directory when aligning faces')
 
     # face alignment
-    parser.add_argument('--wing_path', type=str, default='expr/checkpoints/wing.ckpt')
-    parser.add_argument('--lm_path', type=str, default='expr/checkpoints/celeba_lm_mean.npz')
+    parser.add_argument('--wing_path', type=str, default='expr/wing.ckpt')
+    parser.add_argument('--lm_path', type=str, default='expr/celeba_lm_mean.npz')
 
     # step size
     parser.add_argument('--print_every', type=int, default=50)
@@ -190,4 +192,5 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     args.num_domains = 2 * len(args.domains)
+    #args.num_domains = 2
     main(args)
