@@ -72,6 +72,8 @@ def main(args):
         solver.sample(loaders)
     elif args.mode == 'eval':
         solver.evaluate()
+    elif args.mode == 'multieval':
+        solver.multievaluate()
     elif args.mode == 'align':
         from core.wing import align_faces
         align_faces(args, args.inp_dir, args.out_dir)
@@ -91,7 +93,7 @@ if __name__ == '__main__':
     #parser.add_argument('--num_domains', type=int, default=2,
     #                    help='Number of domains')
     parser.add_argument('--domains', nargs='+',
-                        default=["Male", "Smiling", "Pale_Skin", "Wavy_Hair"])
+                        default=["Male", "Smiling"])
     parser.add_argument('--latent_dim', type=int, default=16,
                         help='Latent vector dimension')
     parser.add_argument('--hidden_dim', type=int, default=512,
@@ -121,11 +123,11 @@ if __name__ == '__main__':
                         help='Probabilty of using random-resized cropping')
     parser.add_argument('--total_iters', type=int, default=100000,
                         help='Number of total iterations')
-    parser.add_argument('--resume_iter', type=int, default=0,
+    parser.add_argument('--resume_iter', type=int, default=85000,
                         help='Iterations to resume training/testing')
     parser.add_argument('--batch_size', type=int, default=2,
                         help='Batch size for training')
-    parser.add_argument('--val_batch_size', type=int, default=32,
+    parser.add_argument('--val_batch_size', type=int, default=4,
                         help='Batch size for validation')
     parser.add_argument('--lr', type=float, default=1e-4,
                         help='Learning rate for D, E and G')
@@ -137,25 +139,25 @@ if __name__ == '__main__':
                         help='Decay rate for 2nd moment of Adam')
     parser.add_argument('--weight_decay', type=float, default=1e-4,
                         help='Weight decay for optimizer')
-    parser.add_argument('--num_outs_per_domain', type=int, default=10,
+    parser.add_argument('--num_outs_per_domain', type=int, default=5,
                         help='Number of generated images per domain during sampling')
     parser.add_argument('--multi_gpus', action="store_true")
 
 
     # misc
     '''parser.add_argument('--mode', type=str, required=True,
-                        choices=['train', 'sample', 'eval', 'align', 'generate'],
+                        choices=['train', 'sample', 'eval', 'multieval', 'align', 'generate'],
                         help='This argument is used in solver')'''
-    parser.add_argument('--mode', type=str, default='train')
+    parser.add_argument('--mode', type=str, default='multieval')
     parser.add_argument('--num_workers', type=int, default=4,
                         help='Number of workers used in DataLoader')
     parser.add_argument('--seed', type=int, default=777,
                         help='Seed for random number generator')
 
     # directory for training
-    parser.add_argument('--train_img_dir', type=str, default='data/celeba_hq/train',
+    parser.add_argument('--train_img_dir', type=str, default='evaldata/celeba_hq/train',
                         help='Directory containing training images')
-    parser.add_argument('--val_img_dir', type=str, default='data/celeba_hq/train',
+    parser.add_argument('--val_img_dir', type=str, default='data/celeba_hq/val',
                         help='Directory containing validation images')
     parser.add_argument('--sample_dir', type=str, default='expr/samples',
                         help='Directory for saving generated images')
@@ -163,11 +165,11 @@ if __name__ == '__main__':
                         help='Directory for saving network checkpoints')
 
     # directory for calculating metrics
-    parser.add_argument('--eval_dir', type=str, default='expr/eval',
+    parser.add_argument('--eval_dir', type=str, default='evaldata/celeba_hq/eval',
                         help='Directory for saving metrics, i.e., FID and LPIPS')
 
     # directory for testing
-    parser.add_argument('--result_dir', type=str, default='expr/results',
+    parser.add_argument('--result_dir', type=str, default='expr/newresults',
                         help='Directory for saving generated images and videos')
     parser.add_argument('--src_dir', type=str, default='generate/src',
                         help='Directory containing input source images')

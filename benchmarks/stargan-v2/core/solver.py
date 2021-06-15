@@ -27,7 +27,7 @@ from core.model import build_model
 from core.checkpoint import CheckpointIO
 from core.data_loader import MultiInputFetcher as InputFetcher
 import core.utils as utils
-from metrics.eval import calculate_metrics
+from metrics.eval import calculate_metrics, multiattr_calculate_metrics
 
 
 class Solver(nn.Module):
@@ -204,6 +204,13 @@ class Solver(nn.Module):
         calculate_metrics(nets_ema, args, step=resume_iter, mode='reference')
 
     @torch.no_grad()
+    def multievaluate(self):
+        args = self.args
+        nets_ema = self.nets_ema
+        self._load_checkpoint(args.resume_iter)
+        multiattr_calculate_metrics(nets_ema, args, args.resume_iter)
+
+    @torch.no_grad()
     def generate(self):
         args = self.args
         nets_ema = self.nets_ema
@@ -226,6 +233,7 @@ class Solver(nn.Module):
         globpath = glob.glob(srcpaths.format())
         for srcpath in globpath:
             src_img = Image.open(srcpath).convert('RGB')
+            srcimgname = srcpath.split('/')[-1][:-4]
 
         src_img = transform(src_img).unsqueeze(0).to(self.device)
 
@@ -264,7 +272,10 @@ class Solver(nn.Module):
         masks = nets_ema.fan(newimg) if args.w_hpf > 0 else None
         newimg = nets_ema.generator(newimg, style2, masks)
 
-        save_image(newimg, os.path.join(args.result_dir, 'result.jpg'))
+        for channel in newimg:
+            channel.mul_(0.5).add_(0.5)
+
+        save_image(newimg, os.path.join(args.result_dir, srcimgname + '_' + line1[0][:-4] + line1[1] + '_' + line2[0][:-4] + line2[1] + '.jpg'))
 
 
 def _random():
@@ -392,7 +403,12 @@ def compute_g_loss(nets, args, x_real, y1_org, y2_org, y1_trg, y2_trg,
     s2_org = nets.style_encoder(x_real, y2_org)
     x_rec2 = nets.generator(x_fake2, s2_org, masks=masks)
 
-    loss_cyc = 0.5 * torch.mean(torch.abs(x_rec1 - x_real) + torch.abs(x_rec2 - x_real))
+    masks = nets.fan(x_fake) if args.w_hpf > 0 else None
+    x_rec = nets.generator(x_fake, s1_org, masks=masks)
+    masks = nets.fan(x_rec) if args.w_hpf > 0 else None
+    x_rec = nets.generator(x_rec, s2_org, masks=masks)
+
+    loss_cyc = torch.mean(torch.abs(x_rec1 - x_real) + torch.abs(x_rec2 - x_real) + torch.abs(x_rec - x_real)) / 3
 
     loss = loss_adv + args.lambda_sty * loss_sty \
         - args.lambda_ds * loss_ds + args.lambda_cyc * loss_cyc + args.lambda_ind * loss_ind

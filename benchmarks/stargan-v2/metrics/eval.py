@@ -15,6 +15,7 @@ from tqdm import tqdm
 
 import numpy as np
 import torch
+from torchvision import transforms
 
 from metrics.fid import calculate_fid_given_paths
 from metrics.lpips import calculate_lpips_given_images
@@ -28,8 +29,16 @@ def calculate_metrics(nets, args, step, mode):
     assert mode in ['latent', 'reference']
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    domains = os.listdir(args.val_img_dir)
-    domains.sort()
+    # domains = os.listdir(args.val_img_dir)
+    # domains.sort()
+    # num_domains = len(domains)
+    # print('Number of domains: %d' % num_domains)
+
+    domains = []
+    for label in args.domain:
+        domains.append(label)
+        domains.append("Not_" + label)
+
     num_domains = len(domains)
     print('Number of domains: %d' % num_domains)
 
@@ -117,6 +126,122 @@ def calculate_metrics(nets, args, step, mode):
 
     # calculate and report fid values
     calculate_fid_for_all_tasks(args, domains, step=step, mode=mode)
+
+
+@torch.no_grad()
+def multiattr_calculate_metrics(nets, args, step):
+    print('Generating multiattr Images')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    labellist = []
+    for label in args.domains:
+        labellist.append(label)
+        labellist.append("Not_" + label)
+
+    reflist = os.listdir(args.train_img_dir)
+
+    loaders = [get_eval_loader(os.path.join(args.train_img_dir, refpath),
+                               args.img_size,
+                               args.val_batch_size,
+                               imagenet_normalize=False) for refpath in reflist]
+
+    lpips_dict = OrderedDict()
+    for i in range(4):
+        # find pair ref
+        ref1 = reflist[i].split('-')
+        ref2 = reflist[i].split('-')
+        for j in range(2):
+            if 'Not' in ref1[j]:
+                ref2[j] = ref1[j][4:]
+            else:
+                ref2[j] = 'Not_' + ref1[j]
+
+        loader_src = loaders[i]
+        loader_ref = loaders[reflist.index(ref2[0] + '-' + ref2[1])]
+        path_fake = os.path.join(args.eval_dir, ref2[0] + '-' + ref2[1])
+        os.makedirs(path_fake, exist_ok=True)
+
+        lpips_values = []
+        print('Generating images and calculating LPIPS for %s...' % ref2[0] + '-' + ref2[1])
+        for j, x_src in enumerate(tqdm(loader_src, total=len(loader_src))):
+            N = x_src.size(0)
+            x_src = x_src.to(device)
+            y_trg1 = torch.tensor([labellist.index(ref2[0])] * N).to(device)
+            y_trg2 = torch.tensor([labellist.index(ref2[1])] * N).to(device)
+            masks = nets.fan(x_src) if args.w_hpf > 0 else None
+
+            group_of_images = []
+            for k in range(args.num_outs_per_domain):
+                try:
+                    x_ref1 = next(iter_ref).to(device)
+                    x_ref2 = next(iter_ref).to(device)
+                except:
+                    iter_ref = iter(loader_ref)
+                    x_ref1 = next(iter_ref).to(device)
+                    x_ref2 = next(iter_ref).to(device)
+
+                if x_ref1.size(0) > N:
+                    x_ref1 = x_ref1[:N]
+                if x_ref2.size(0) > N:
+                    x_ref2 = x_ref2[:N]
+
+                s_trg1 = nets.style_encoder(x_ref1, y_trg1)
+                s_trg2 = nets.style_encoder(x_ref2, y_trg2)
+
+                x_fake = nets.generator(x_src, s_trg1, masks=masks)
+                masks = nets.fan(x_fake) if args.w_hpf > 0 else None
+                x_fake = nets.generator(x_fake, s_trg2, masks=masks)
+                group_of_images.append(x_fake)
+
+                # save generated images to calculate FID later
+                for l in range(N):
+                    filename = os.path.join(
+                        path_fake,
+                        '%.4i_%.2i.png' % (j * args.val_batch_size + (l + 1), k + 1))
+                    utils.save_image(x_fake[l], ncol=1, filename=filename)
+
+            lpips_value = calculate_lpips_given_images(group_of_images)
+            lpips_values.append(lpips_value)
+
+        # calculate LPIPS for each task (e.g. cat2dog, dog2cat)
+        lpips_mean = np.array(lpips_values).mean()
+        lpips_dict['LPIPS_%s' % ref2[0] + '-' + ref2[1]] = lpips_mean
+
+    del loaders
+    del iter_ref
+
+    # calculate the average LPIPS for all tasks
+    lpips_mean = 0
+    for _, value in lpips_dict.items():
+        lpips_mean += value / len(lpips_dict)
+    lpips_dict['LPIPS_mean'] = lpips_mean
+
+    # report LPIPS values
+    filename = os.path.join(args.eval_dir, 'LPIPS_%s.json' % step)
+    utils.save_json(lpips_dict, filename)
+
+    # calculate and report fid values
+    print('Calculating FID for all tasks...')
+    fid_values = OrderedDict()
+    for ref in reflist:
+        path_real = os.path.join(args.train_img_dir, ref)
+        path_fake = os.path.join(args.eval_dir, ref)
+        print('Calculating FID for %s...' % ref)
+        fid_value = calculate_fid_given_paths(
+            paths=[path_real, path_fake],
+            img_size=args.img_size,
+            batch_size=args.val_batch_size)
+        fid_values['FID_%s' % ref] = fid_value
+
+    # calculate the average FID for all tasks
+    fid_mean = 0
+    for _, value in fid_values.items():
+        fid_mean += value / len(fid_values)
+    fid_values['FID_mean'] = fid_mean
+
+    # report FID values
+    filename = os.path.join(args.eval_dir, 'FID_%s.json' % step)
+    utils.save_json(fid_values, filename)
 
 
 def calculate_fid_for_all_tasks(args, domains, step, mode):
